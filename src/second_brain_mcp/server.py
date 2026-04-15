@@ -29,6 +29,7 @@ from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 
 from . import indexer as idx
+from . import prompts
 from .config import Config
 from .config import load as load_config
 
@@ -340,6 +341,18 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
     if name == "obsidian_backlinks":
         return await _call_backlinks(args)
     return _text({"error": f"unknown tool: {name}"})
+
+
+@app.list_prompts()
+async def list_prompts() -> list[types.Prompt]:
+    return [prompts.TO_OBSIDIAN_PROMPT]
+
+
+@app.get_prompt()
+async def get_prompt(name: str, arguments: dict[str, str] | None) -> types.GetPromptResult:
+    if name == "to_obsidian":
+        return prompts.get_to_obsidian()
+    raise ValueError(f"Unknown prompt: {name}")
 
 
 async def _serve() -> None:
