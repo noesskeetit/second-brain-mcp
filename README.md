@@ -1,6 +1,13 @@
 # second-brain-mcp
 
+[![PyPI version](https://img.shields.io/pypi/v/second-brain-mcp.svg)](https://pypi.org/project/second-brain-mcp/)
+[![Python versions](https://img.shields.io/pypi/pyversions/second-brain-mcp.svg)](https://pypi.org/project/second-brain-mcp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/noesskeetit/second-brain-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/noesskeetit/second-brain-mcp/actions/workflows/ci.yml)
+
 Turn your Obsidian vault into semantic memory for any MCP-capable coding agent.
+
+> **v1.0.0 — early release.** Works end-to-end on macOS and Linux; published on PyPI on 2026-04-15. Windows is untested. Feedback, bug reports, and testing notes are very welcome — please [open an issue](https://github.com/noesskeetit/second-brain-mcp/issues) if anything misbehaves or if the docs are unclear.
 
 **What it does.** Ships a stdio MCP server with four read-only tools
 (`obsidian_overview`, `obsidian_search`, `obsidian_read`, `obsidian_backlinks`)
@@ -13,6 +20,16 @@ no reflection or compaction loops running on your behalf. The LLM does
 the extraction work when you call `/to_obsidian`, but every candidate
 note requires your explicit per-note approval before it is written.
 You control what enters the vault; the server only reads from it.
+
+**How this is different from other Obsidian MCP servers.** Existing
+Obsidian MCP servers (e.g. variants of `mcp-obsidian`) typically talk
+to the running Obsidian app through its Local-REST plugin and expose
+file-level tools — `list_files`, `get_file`, `append_to_note`, etc.
+`second-brain-mcp` is offline and plugin-free: it reads the vault as
+plain files from disk, builds a local semantic index with bge-m3, and
+exposes **semantic search** rather than path-based CRUD. Obsidian does
+not need to be running. The write path is a curated workflow with
+per-note human approval, not a raw `write_file` tool.
 
 ## 30-second quick start
 
@@ -61,18 +78,19 @@ until you add the relevant structure.
 
 Most agent-memory systems default to the **archival** model: capture
 everything — raw conversation turns, every tool call, every message —
-then hope semantic search pulls the right thing back later. A two-hour
-evaluation of one such system (MemPalace, with its exchange-pair
-chunking and multi-layer palace) showed the limit of this approach: on
-realistic queries, a tiny set of human-approved notes outperformed a
-~50× larger raw conversation archive in the same index.
+then rely on semantic search to pull the right thing back later.
+Comparative retrieval tests against one such system (MemPalace, with
+its exchange-pair chunking and multi-layer palace) surfaced a clear
+trade-off: on realistic queries a small set of human-approved notes
+outperformed a much larger raw conversation archive sitting in the
+same index.
 
 The reason is simple. In any given session roughly 95% of what's said
 is working noise — code, syntactic back-and-forth, tactical detail
 that expires with the task. The 5% that survives — atomic facts,
 decisions, insights — is what you actually want to find six months
-later. Archival memory mixes both and leans on the embedder to
-separate them. It rarely works well enough to trust.
+later. Archival memory keeps both and leans on the embedder to
+separate them, and that separation is hard to get right in practice.
 
 `second-brain-mcp` takes the **editorial** position: memory is what
 you chose to remember. Nothing reaches the vault by accident. The
