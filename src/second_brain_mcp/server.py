@@ -362,7 +362,7 @@ async def _serve() -> None:
             write,
             InitializationOptions(
                 server_name="second-brain",
-                server_version="1.0.0",
+                server_version="1.0.1",
                 capabilities=app.get_capabilities(
                     notification_options=NotificationOptions(),
                     experimental_capabilities={},
