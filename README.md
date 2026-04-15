@@ -7,8 +7,12 @@ Turn your Obsidian vault into semantic memory for any MCP-capable coding agent.
 plus one prompt (`to_obsidian`) that drives a human-in-the-loop write
 workflow. Works with Claude Code, Cursor, Zed, or any client that speaks MCP.
 
-**What it is not.** No auto-writes. No LLM-extraction. No reflection or
-compaction layer. You own the vault; the server reads from it.
+**What it is not.** No auto-writes — nothing is written to the vault
+without an explicit `/to_obsidian` invocation. No background extraction,
+no reflection or compaction loops running on your behalf. The LLM does
+the extraction work when you call `/to_obsidian`, but every candidate
+note requires your explicit per-note approval before it is written.
+You control what enters the vault; the server only reads from it.
 
 ## 30-second quick start
 

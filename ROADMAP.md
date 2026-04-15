@@ -71,10 +71,13 @@ that scale threshold is hit in practice.
 Explicitly off the roadmap. These will not ship in this package; if
 they happen at all, they belong in separate projects.
 
-- **Auto-LLM-extraction, auto-reflection, compaction loops.** Memory
-  poisoning risk, cascading-error risk, and over-accommodation are all
-  real failure modes with no good automated defence today.
-  Human-in-the-loop through `to_obsidian` is the whole point.
+- **Autonomous / background extraction, auto-reflection, compaction
+  loops.** Memory poisoning risk, cascading-error risk, and
+  over-accommodation are all real failure modes with no good automated
+  defence today. The LLM does the extraction work during an explicit
+  `/to_obsidian` invocation, but no process runs automatically in the
+  background or mid-session. Per-note human approval through
+  `to_obsidian` is the whole point.
 - **Write tools exposed via MCP.** See
   [docs/SECURITY.md](docs/SECURITY.md). Any MCP write tool is a
   memory-poisoning vector.

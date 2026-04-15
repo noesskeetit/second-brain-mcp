@@ -36,8 +36,8 @@ from .config import load as load_config
 MEMORY_PROTOCOL = """OBSIDIAN MEMORY PROTOCOL
 
 This MCP exposes a curated Obsidian vault as the source of truth for past
-decisions, facts, preferences, people, and project context that have been
-deliberately written down by the user.
+decisions, facts, preferences, people, and project context. Every note in
+the vault was explicitly approved by the user before it was written.
 
 1. AT SESSION START: you have already received the vault overview and the
    fresh _index.md above. Skim both before asking clarifying questions about

@@ -211,9 +211,12 @@ of milliseconds. Agents never need to think about it.
 
 Things this package deliberately does **not** do:
 
-- **Auto-LLM-extraction** — no background process that turns conversations
-  into notes. Writes go through `to_obsidian` with human approval for
-  every candidate.
+- **Automatic or background extraction** — no background process, no
+  mid-session writes, no reflection or compaction loop running without
+  the user's knowledge. Extraction does happen during an explicit
+  `/to_obsidian` invocation: the LLM walks the session, identifies
+  candidates, and checks for duplicates. But every candidate note
+  requires explicit per-note approval before it is written to the vault.
 - **Reflection loops** — no agent-authored reflections that get fed back
   into memory. `to_obsidian` is the reflection step, but the human is in
   the loop for every accepted entry.
