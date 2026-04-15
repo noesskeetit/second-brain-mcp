@@ -1,24 +1,77 @@
 # tests/test_server_smoke.py
+import contextlib
 import json
 import os
+import selectors
 import subprocess
 import sys
+import time
 
 
-def _run_rpc(env, *messages):
-    """Send a list of JSON-RPC messages to the server over stdio and return responses."""
+def _run_rpc(env, *messages, timeout=120):
+    """Send a list of JSON-RPC messages to the server over stdio and return responses.
+
+    Keeps stdin open until every expected response has been read — closing stdin
+    too early lets the anyio-based MCP server cancel the in-flight request
+    before it finishes processing. macOS is forgiving about the race; Linux
+    CI runners are not.
+    """
     cmd = [sys.executable, "-m", "second_brain_mcp.server"]
-    payload = "\n".join(json.dumps(m) for m in messages) + "\n"
-    proc = subprocess.run(
+    expected_ids = {m["id"] for m in messages if "id" in m}
+
+    proc = subprocess.Popen(
         cmd,
-        input=payload,
-        capture_output=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
         env=env,
-        timeout=120,
+        bufsize=1,
     )
-    lines = [line for line in proc.stdout.splitlines() if line.strip().startswith("{")]
-    return [json.loads(line) for line in lines], proc.stderr
+
+    for m in messages:
+        proc.stdin.write(json.dumps(m) + "\n")
+    proc.stdin.flush()
+
+    responses: list[dict] = []
+    received_ids: set[int] = set()
+    deadline = time.monotonic() + timeout
+    sel = selectors.DefaultSelector()
+    sel.register(proc.stdout, selectors.EVENT_READ)
+
+    try:
+        while received_ids != expected_ids:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"RPC timeout; got ids {received_ids}, expected {expected_ids}")
+            events = sel.select(timeout=remaining)
+            if not events:
+                continue
+            line = proc.stdout.readline()
+            if not line:
+                break
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if "id" in obj and obj["id"] in expected_ids:
+                responses.append(obj)
+                received_ids.add(obj["id"])
+    finally:
+        sel.close()
+        with contextlib.suppress(BrokenPipeError, OSError):
+            proc.stdin.close()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+    stderr = proc.stderr.read() if proc.stderr else ""
+    return responses, stderr
 
 
 def test_overview_returns_protocol_and_stats(tmp_vault, monkeypatch):
