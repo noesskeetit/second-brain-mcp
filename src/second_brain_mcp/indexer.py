@@ -55,10 +55,20 @@ def embed_fn():
     global _EMBED_FN
     if _EMBED_FN is None:
         cfg = _get_cfg()
-        _EMBED_FN = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=cfg.embed_model,
-            device=cfg.embed_device,
-        )
+        if cfg.embed_provider == "openai":
+            kwargs = {
+                "api_key": cfg.embed_api_key,
+                "api_base": cfg.embed_api_url,
+                "model_name": cfg.embed_model,
+            }
+            if cfg.embed_dimensions:
+                kwargs["dimensions"] = cfg.embed_dimensions
+            _EMBED_FN = embedding_functions.OpenAIEmbeddingFunction(**kwargs)
+        else:
+            _EMBED_FN = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name=cfg.embed_model,
+                device=cfg.embed_device,
+            )
     return _EMBED_FN
 
 
