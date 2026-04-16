@@ -47,3 +47,10 @@ def test_index_md_excluded_from_vector(tmp_vault):
     indexer.rebuild()
     hits = indexer.search("Index", n_results=10)
     assert not any(h["rel"] == "_index.md" for h in hits)
+
+
+def test_stats_reports_provider(tmp_vault):
+    indexer.rebuild()
+    s = indexer.stats()
+    assert s["embed_provider"] == "local"
+    assert s["embed_model"] == "sentence-transformers/all-MiniLM-L6-v2"

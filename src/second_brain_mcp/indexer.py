@@ -419,6 +419,7 @@ def stats() -> dict:
         "chunks": len(metas),
         "vault": str(cfg.vault),
         "index_dir": str(cfg.index_dir),
+        "embed_provider": cfg.embed_provider,
         "embed_model": cfg.embed_model,
         "embed_device": cfg.embed_device,
     }
