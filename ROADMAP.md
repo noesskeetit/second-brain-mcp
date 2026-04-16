@@ -6,6 +6,12 @@ enough to be a good first-contribution PR.
 
 ---
 
+## Done
+
+- **OpenAI-compatible API embedder** (2026-04-16) — `OBSIDIAN_EMBED_PROVIDER=openai` points the indexer at any OpenAI-compatible `/v1/embeddings` endpoint (Cloud.ru FM API, OpenAI, self-hosted Infinity). Local mode remains the default. See `docs/CUSTOMIZE.md` → API embedder.
+
+---
+
 ## v1.1 — Trust-aware ranking
 
 Multiply `similarity` by a booster read from `fm_confidence`:

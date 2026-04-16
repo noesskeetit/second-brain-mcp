@@ -26,8 +26,29 @@ def test_switching_provider_blocks_open(monkeypatch, tmp_vault, reset_indexer_ca
     monkeypatch.setenv("OBSIDIAN_EMBED_MODEL", "Qwen/Qwen3-Embedding-0.6B")
     reset_indexer_caches()
 
-    with pytest.raises(RuntimeError, match="rebuild"):
+    with pytest.raises(RuntimeError, match="rebuild") as exc_info:
         indexer.get_collection()
+
+    # Message must surface both the stored and current provider/model so the
+    # user knows what changed without digging through env.
+    msg = str(exc_info.value)
+    assert "local" in msg
+    assert "openai" in msg
+    assert "all-MiniLM-L6-v2" in msg
+    assert "Qwen" in msg
+
+
+def test_dimensions_only_change_is_not_blocked(monkeypatch, tmp_vault, reset_indexer_caches):
+    """Stamp records dimensions but _check_stamp compares only provider+model.
+    A dimensions-only override is harmless for the same model, so it must not
+    raise. This test pins that behavior so a future refactor doesn't quietly
+    start comparing dimensions."""
+    indexer.rebuild()
+
+    monkeypatch.setenv("OBSIDIAN_EMBED_DIMENSIONS", "512")
+    reset_indexer_caches()
+
+    indexer.get_collection()  # must not raise
 
 
 def test_switching_model_within_local_blocks_open(monkeypatch, tmp_vault, reset_indexer_caches):
