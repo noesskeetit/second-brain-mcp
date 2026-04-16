@@ -104,8 +104,13 @@ def get_collection():
     cfg.index_dir.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(cfg.index_dir / "index"))
     try:
-        # Fetch without embedding_function first so Chroma doesn't validate EF
-        # compatibility before we get a chance to check our own stamp.
+        # Fetch without an embedding function first. If we passed embed_fn()
+        # here, Chroma itself would raise ValueError on EF mismatch — that
+        # error would fall into our outer `except Exception` and the fallback
+        # create_collection would then fail with a confusing "Collection
+        # already exists". Checking our own stamp first lets us raise a
+        # RuntimeError with an actionable rebuild command before Chroma
+        # gets a chance to complain with its less-helpful error.
         col_meta = client.get_collection(COLLECTION)
         _check_stamp(col_meta)
         return client.get_collection(COLLECTION, embedding_function=embed_fn())
