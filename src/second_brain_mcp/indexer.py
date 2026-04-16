@@ -55,11 +55,48 @@ def embed_fn():
     global _EMBED_FN
     if _EMBED_FN is None:
         cfg = _get_cfg()
-        _EMBED_FN = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=cfg.embed_model,
-            device=cfg.embed_device,
-        )
+        if cfg.embed_provider == "openai":
+            kwargs = {
+                "api_key": cfg.embed_api_key,
+                "api_base": cfg.embed_api_url,
+                "model_name": cfg.embed_model,
+            }
+            if cfg.embed_dimensions:
+                kwargs["dimensions"] = cfg.embed_dimensions
+            _EMBED_FN = embedding_functions.OpenAIEmbeddingFunction(**kwargs)
+        else:
+            _EMBED_FN = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name=cfg.embed_model,
+                device=cfg.embed_device,
+            )
     return _EMBED_FN
+
+
+def _current_stamp() -> dict[str, str]:
+    cfg = _get_cfg()
+    return {
+        "embed_provider": cfg.embed_provider,
+        "embed_model": cfg.embed_model,
+        "embed_dimensions": str(cfg.embed_dimensions) if cfg.embed_dimensions else "",
+    }
+
+
+def _check_stamp(col) -> None:
+    cfg = _get_cfg()
+    meta = col.metadata or {}
+    stored_provider = meta.get("embed_provider")
+    stored_model = meta.get("embed_model")
+    # Legacy collections (pre-stamp) are tolerated.
+    if not stored_provider and not stored_model:
+        return
+    if stored_provider != cfg.embed_provider or stored_model != cfg.embed_model:
+        raise RuntimeError(
+            "Index was built with "
+            f"provider={stored_provider!r}, model={stored_model!r}, but current "
+            f"config is provider={cfg.embed_provider!r}, model={cfg.embed_model!r}. "
+            "Rebuild with:\n"
+            "  rm -rf $OBSIDIAN_INDEX_DIR/index && second-brain-mcp rebuild"
+        )
 
 
 def get_collection():
@@ -67,9 +104,24 @@ def get_collection():
     cfg.index_dir.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(cfg.index_dir / "index"))
     try:
+        # Fetch without an embedding function first. If we passed embed_fn()
+        # here, Chroma itself would raise ValueError on EF mismatch — that
+        # error would fall into our outer `except Exception` and the fallback
+        # create_collection would then fail with a confusing "Collection
+        # already exists". Checking our own stamp first lets us raise a
+        # RuntimeError with an actionable rebuild command before Chroma
+        # gets a chance to complain with its less-helpful error.
+        col_meta = client.get_collection(COLLECTION)
+        _check_stamp(col_meta)
         return client.get_collection(COLLECTION, embedding_function=embed_fn())
+    except RuntimeError:
+        raise
     except Exception:
-        return client.create_collection(COLLECTION, embedding_function=embed_fn())
+        return client.create_collection(
+            COLLECTION,
+            embedding_function=embed_fn(),
+            metadata=_current_stamp(),
+        )
 
 
 def reset_collection():
@@ -78,7 +130,11 @@ def reset_collection():
     client = chromadb.PersistentClient(path=str(cfg.index_dir / "index"))
     with contextlib.suppress(Exception):
         client.delete_collection(COLLECTION)
-    return client.create_collection(COLLECTION, embedding_function=embed_fn())
+    return client.create_collection(
+        COLLECTION,
+        embedding_function=embed_fn(),
+        metadata=_current_stamp(),
+    )
 
 
 @dataclass
@@ -363,6 +419,7 @@ def stats() -> dict:
         "chunks": len(metas),
         "vault": str(cfg.vault),
         "index_dir": str(cfg.index_dir),
+        "embed_provider": cfg.embed_provider,
         "embed_model": cfg.embed_model,
         "embed_device": cfg.embed_device,
     }

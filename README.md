@@ -50,7 +50,9 @@ claude mcp add -s user second-brain \
 
 First run downloads the bge-m3 embedder (~2.3 GB) on the first tool call
 — roughly 5 seconds after that. See [docs/CUSTOMIZE.md](docs/CUSTOMIZE.md)
-for lighter models.
+for lighter models, or to point at an OpenAI-compatible embeddings API
+(Cloud.ru FM API, OpenAI, self-hosted Infinity) instead of the local
+model.
 
 ## Vault requirements
 
