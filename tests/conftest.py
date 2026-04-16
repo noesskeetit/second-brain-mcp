@@ -26,3 +26,17 @@ def tmp_vault(tmp_path, monkeypatch):
     indexer._get_cfg.cache_clear()
     indexer._EMBED_FN = None
     return vault
+
+
+@pytest.fixture
+def reset_indexer_caches():
+    """Clear indexer's cached config and embed-fn so env-var changes take effect."""
+    from second_brain_mcp import indexer
+
+    def _reset():
+        indexer._get_cfg.cache_clear()
+        indexer._EMBED_FN = None
+
+    _reset()
+    yield _reset
+    _reset()

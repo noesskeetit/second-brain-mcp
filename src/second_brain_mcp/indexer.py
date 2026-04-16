@@ -72,14 +72,51 @@ def embed_fn():
     return _EMBED_FN
 
 
+def _current_stamp() -> dict[str, str]:
+    cfg = _get_cfg()
+    return {
+        "embed_provider": cfg.embed_provider,
+        "embed_model": cfg.embed_model,
+        "embed_dimensions": str(cfg.embed_dimensions) if cfg.embed_dimensions else "",
+    }
+
+
+def _check_stamp(col) -> None:
+    cfg = _get_cfg()
+    meta = col.metadata or {}
+    stored_provider = meta.get("embed_provider")
+    stored_model = meta.get("embed_model")
+    # Legacy collections (pre-stamp) are tolerated.
+    if not stored_provider and not stored_model:
+        return
+    if stored_provider != cfg.embed_provider or stored_model != cfg.embed_model:
+        raise RuntimeError(
+            "Index was built with "
+            f"provider={stored_provider!r}, model={stored_model!r}, but current "
+            f"config is provider={cfg.embed_provider!r}, model={cfg.embed_model!r}. "
+            "Rebuild with:\n"
+            "  rm -rf $OBSIDIAN_INDEX_DIR/index && second-brain-mcp rebuild"
+        )
+
+
 def get_collection():
     cfg = _get_cfg()
     cfg.index_dir.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(cfg.index_dir / "index"))
     try:
+        # Fetch without embedding_function first so Chroma doesn't validate EF
+        # compatibility before we get a chance to check our own stamp.
+        col_meta = client.get_collection(COLLECTION)
+        _check_stamp(col_meta)
         return client.get_collection(COLLECTION, embedding_function=embed_fn())
+    except RuntimeError:
+        raise
     except Exception:
-        return client.create_collection(COLLECTION, embedding_function=embed_fn())
+        return client.create_collection(
+            COLLECTION,
+            embedding_function=embed_fn(),
+            metadata=_current_stamp(),
+        )
 
 
 def reset_collection():
@@ -88,7 +125,11 @@ def reset_collection():
     client = chromadb.PersistentClient(path=str(cfg.index_dir / "index"))
     with contextlib.suppress(Exception):
         client.delete_collection(COLLECTION)
-    return client.create_collection(COLLECTION, embedding_function=embed_fn())
+    return client.create_collection(
+        COLLECTION,
+        embedding_function=embed_fn(),
+        metadata=_current_stamp(),
+    )
 
 
 @dataclass
