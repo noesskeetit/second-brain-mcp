@@ -8,19 +8,23 @@ client's config). No config files, no flags.
 
 ## Environment variables
 
-| Variable                | Default                   | Purpose                                                         |
-|-------------------------|---------------------------|-----------------------------------------------------------------|
-| `OBSIDIAN_VAULT`        | —                         | **Required.** Absolute path to your Obsidian vault.             |
-| `OBSIDIAN_INDEX_DIR`    | `~/.second-brain-mcp/`    | Where the ChromaDB persistent dir and `backlinks.json` live.    |
-| `OBSIDIAN_EMBED_MODEL`  | `BAAI/bge-m3`             | `sentence-transformers` model identifier used for embeddings.   |
-| `OBSIDIAN_EMBED_DEVICE` | auto (`mps` / `cuda` / `cpu`) | Torch device for embedding. Override when auto-detect is wrong. |
+| Variable                       | Default                      | Purpose                                                                               |
+|--------------------------------|------------------------------|---------------------------------------------------------------------------------------|
+| `OBSIDIAN_VAULT`               | —                            | **Required.** Absolute path to your Obsidian vault.                                   |
+| `OBSIDIAN_INDEX_DIR`           | `~/.second-brain-mcp/`       | Where the ChromaDB persistent dir and `backlinks.json` live.                          |
+| `OBSIDIAN_EMBED_PROVIDER`      | `local`                      | `local` or `openai`. Selects the embedding backend.                                   |
+| `OBSIDIAN_EMBED_MODEL`         | `BAAI/bge-m3`                | Local: HuggingFace model id. API: OpenAI-style `model` string.                        |
+| `OBSIDIAN_EMBED_DEVICE`        | auto (`mps` / `cuda` / `cpu`) | Local-only. Torch device for embedding. Ignored when `provider=openai`.               |
+| `OBSIDIAN_EMBED_API_KEY`       | —                            | **Required when `provider=openai`.** API key for the endpoint.                        |
+| `OBSIDIAN_EMBED_API_URL`       | —                            | **Required when `provider=openai`.** Base URL of the OpenAI-compatible endpoint.      |
+| `OBSIDIAN_EMBED_DIMENSIONS`    | —                            | Optional (provider=openai). Override embedding dimension if the model supports it.    |
 
 When `OBSIDIAN_VAULT` is missing, the server fails fast with a readable
 error pointing to this doc.
 
 ---
 
-## Alternative embedders
+## Local embedder (default)
 
 The default embedder — `BAAI/bge-m3` — is the right choice for most
 vaults because it handles mixed-language content well. If you need a
@@ -36,10 +40,56 @@ from the table below and switch via `OBSIDIAN_EMBED_MODEL`.
 
 ---
 
+## API embedder (OpenAI-compatible)
+
+If you'd rather not keep the embedder on disk (thin client, no GPU,
+CI, or you already pay for an embeddings API), point `second-brain-mcp`
+at any OpenAI-compatible `/v1/embeddings` endpoint.
+
+**Recipe — Cloud.ru Foundation Models API + Qwen3-Embedding-0.6B:**
+
+```bash
+claude mcp remove second-brain  # if re-registering
+claude mcp add -s user second-brain \
+  -e OBSIDIAN_VAULT="$HOME/obsidian/vault" \
+  -e OBSIDIAN_EMBED_PROVIDER=openai \
+  -e OBSIDIAN_EMBED_API_URL=https://foundation-models.api.cloud.ru/v1 \
+  -e OBSIDIAN_EMBED_API_KEY="$FM_API_KEY" \
+  -e OBSIDIAN_EMBED_MODEL=Qwen/Qwen3-Embedding-0.6B \
+  -- uvx second-brain-mcp serve
+```
+
+After registering, drop the old local index and rebuild:
+
+```bash
+rm -rf $OBSIDIAN_INDEX_DIR/index
+uvx second-brain-mcp rebuild
+```
+
+**Tested endpoints:**
+
+| Provider                           | Base URL                                             | Known-good model                 |
+|------------------------------------|------------------------------------------------------|----------------------------------|
+| Cloud.ru Foundation Models API     | `https://foundation-models.api.cloud.ru/v1`          | `Qwen/Qwen3-Embedding-0.6B`      |
+| OpenAI                             | `https://api.openai.com/v1`                          | `text-embedding-3-small`         |
+
+Any OpenAI-compatible endpoint should work — these are just the ones
+we've run `rebuild` against. If your endpoint's model returns a
+non-standard dimension, set `OBSIDIAN_EMBED_DIMENSIONS` to match.
+
+**Index compatibility.** Switching providers or models invalidates the
+existing Chroma index — embeddings from different models are not
+comparable, and `second-brain-mcp` refuses to open a collection stamped
+with a different provider/model. The fix is always the same: remove
+`$OBSIDIAN_INDEX_DIR/index` and `rebuild`.
+
+---
+
 ## How to switch embedders
 
-Changing the embedder changes the embedding dimensionality, which makes
-your old index incompatible. The recipe is:
+Switching to a different model — or to a different provider — changes
+the embedding semantics (and often the dimensionality), so the old
+index is unusable. The recipe is the same either way:
 
 ```bash
 # 1. Re-register the server with the new model env var
@@ -53,6 +103,22 @@ claude mcp add -s user second-brain \
 rm -rf $OBSIDIAN_INDEX_DIR/index
 
 # 3. Rebuild with the new model
+uvx second-brain-mcp rebuild
+```
+
+Switch to an API-backed embedder:
+
+```bash
+claude mcp remove second-brain
+claude mcp add -s user second-brain \
+  -e OBSIDIAN_VAULT="$HOME/obsidian/vault" \
+  -e OBSIDIAN_EMBED_PROVIDER=openai \
+  -e OBSIDIAN_EMBED_API_URL=https://foundation-models.api.cloud.ru/v1 \
+  -e OBSIDIAN_EMBED_API_KEY="$FM_API_KEY" \
+  -e OBSIDIAN_EMBED_MODEL=Qwen/Qwen3-Embedding-0.6B \
+  -- uvx second-brain-mcp serve
+
+rm -rf $OBSIDIAN_INDEX_DIR/index
 uvx second-brain-mcp rebuild
 ```
 
