@@ -9,3 +9,4 @@ build/
 .chroma/
 *.log
 .DS_Store
+.worktrees/
