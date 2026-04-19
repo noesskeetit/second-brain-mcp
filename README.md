@@ -9,17 +9,21 @@ Turn your Obsidian vault into semantic memory for any MCP-capable coding agent.
 
 > **v1.0.0 — early release.** Works end-to-end on macOS and Linux; published on PyPI on 2026-04-15. Windows is untested. Feedback, bug reports, and testing notes are very welcome — please [open an issue](https://github.com/noesskeetit/second-brain-mcp/issues) if anything misbehaves or if the docs are unclear.
 
-**What it does.** Ships a stdio MCP server with four read-only tools
-(`obsidian_overview`, `obsidian_search`, `obsidian_read`, `obsidian_backlinks`)
-plus one prompt (`to_obsidian`) that drives a human-in-the-loop write
-workflow. Works with Claude Code, Cursor, Zed, or any client that speaks MCP.
+**What it does.** Ships an MCP server with five tools:
+four read tools (`obsidian_overview`, `obsidian_search`, `obsidian_read`,
+`obsidian_backlinks`) and one flexible write tool (`obsidian_write` —
+create / append / prepend / replace_body / replace_text / set_frontmatter
+/ delete / rename, one `op` field picks the mutation). Works with
+Claude Code, Cursor, Zed, or any client that speaks MCP. Runs on stdio
+by default, or on streamable HTTP when you want to host it on a remote
+VM and connect across the network.
 
-**What it is not.** No auto-writes — nothing is written to the vault
-without an explicit `/to_obsidian` invocation. No background extraction,
-no reflection or compaction loops running on your behalf. The LLM does
-the extraction work when you call `/to_obsidian`, but every candidate
-note requires your explicit per-note approval before it is written.
-You control what enters the vault; the server only reads from it.
+**Editorial, not archival.** Writes are allowed, but the tool is small
+and deliberate, not a compaction loop. Nothing is captured automatically
+from your session — the agent only writes when you tell it to, and it
+is prompted to check for duplicates and prefer small ops (bump a
+frontmatter date, append an addendum) over rewriting whole notes. The
+vault stays dense and curated; the agent stays a guest, not a gardener.
 
 **How this is different from other Obsidian MCP servers.** Existing
 Obsidian MCP servers (e.g. variants of `mcp-obsidian`) typically talk
@@ -27,9 +31,9 @@ to the running Obsidian app through its Local-REST plugin and expose
 file-level tools — `list_files`, `get_file`, `append_to_note`, etc.
 `second-brain-mcp` is offline and plugin-free: it reads the vault as
 plain files from disk, builds a local semantic index with bge-m3, and
-exposes **semantic search** rather than path-based CRUD. Obsidian does
-not need to be running. The write path is a curated workflow with
-per-note human approval, not a raw `write_file` tool.
+exposes **semantic search** first. Obsidian does not need to be running.
+The write path is one dispatcher tool with atomic per-op semantics,
+not a sprawl of per-action tools.
 
 ## 30-second quick start
 
@@ -53,6 +57,57 @@ First run downloads the bge-m3 embedder (~2.3 GB) on the first tool call
 for lighter models, or to point at an OpenAI-compatible embeddings API
 (Cloud.ru FM API, OpenAI, self-hosted Infinity) instead of the local
 model.
+
+## Remote mode (streamable HTTP)
+
+Host the server on a VM and connect your local MCP client over HTTP. The
+same process, just a different transport.
+
+```bash
+# On the VM — bind to 0.0.0.0 and require a Bearer token
+export OBSIDIAN_VAULT=$HOME/obsidian/vault
+export OBSIDIAN_HTTP_TOKEN=$(openssl rand -hex 32)
+uvx second-brain-mcp serve --transport http --host 0.0.0.0 --port 8765
+
+# On your laptop — register as a remote MCP
+claude mcp add --transport http second-brain \
+  https://vm.example.com:8765/mcp \
+  --header "Authorization: Bearer $OBSIDIAN_HTTP_TOKEN"
+```
+
+The server refuses to bind to a non-loopback host without
+`OBSIDIAN_HTTP_TOKEN` set — no quietly open ports. For loopback
+(`--host 127.0.0.1`) the token is optional; combine with an SSH tunnel
+for remote use. Terminate TLS in front with nginx/caddy for anything
+beyond a trusted network.
+
+Env vars: `OBSIDIAN_MCP_TRANSPORT`, `OBSIDIAN_MCP_HOST`, `OBSIDIAN_MCP_PORT`,
+`OBSIDIAN_MCP_PATH`, `OBSIDIAN_HTTP_TOKEN`.
+
+## The `obsidian_write` tool
+
+One tool, many ops — pick with the `op` field:
+
+| `op` | use for |
+|---|---|
+| `create` | new note (fails on collision unless `overwrite=true`) |
+| `append` / `prepend` | insert text at the end / start of a note's body |
+| `replace_body` | swap the whole body, keep frontmatter |
+| `replace_text` | literal or regex find/replace inside a note's body |
+| `set_frontmatter` | merge / remove frontmatter keys without touching body |
+| `delete` | delete a note |
+| `rename` | move/rename a note (does NOT rewrite wikilinks elsewhere) |
+
+Every op:
+- takes a vault-relative `path`, path-traversal guarded,
+- supports `dry_run=true` → returns `{before, after}` without touching disk,
+- writes atomically (tmp + `os.replace`) so a crash never leaves half files,
+- triggers an incremental reindex on success, so search reflects the edit
+  immediately.
+
+The tool description itself nudges the model toward small, targeted ops
+over whole-note rewrites, and toward `obsidian_search` before `create` to
+avoid duplicates.
 
 ## Vault requirements
 
@@ -95,36 +150,25 @@ later. Archival memory keeps both and leans on the embedder to
 separate them, and that separation is hard to get right in practice.
 
 `second-brain-mcp` takes the **editorial** position: memory is what
-you chose to remember. Nothing reaches the vault by accident. The
-loop:
+you chose to remember. The agent gets a small, explicit write tool
+(`obsidian_write`) rather than an archival firehose, and the tool
+description itself steers the model toward atomic, deduplicated,
+small-op edits rather than dumping every session turn into the vault.
+You stay the editor — the agent assists.
 
-1. You work a session normally. The agent reads from the vault
-   through the four read-only tools but writes nothing on its own.
-2. When you're done, you invoke `to_obsidian`. The agent walks the
-   session, pulls out candidate facts, frames each as an atomic
-   statement, and checks for duplicates against the existing vault.
-3. It shows you the list. You approve, reject, merge, or rewrite
-   each candidate individually.
-4. Only the approved notes land in the vault.
-
-The LLM does the extraction work — it is good at abstracting and
-generalising. You are the editor — you know which of the candidates
-actually matter. The vault ends up small, dense, and almost entirely
-signal. That curated remnant is what makes retrieval surface the
-right thing instead of the loudest thing.
-
-This is why there is no reflection loop, no background extraction,
-no auto-writes. The approval gate is the whole point.
+The vault ends up small, dense, and almost entirely signal. That
+curated remnant is what makes retrieval surface the right thing
+instead of the loudest thing.
 
 ## Documentation
 
-- [docs/INSTALL.md](docs/INSTALL.md) — per-client setup (Claude Code, Cursor, Zed, generic)
+- [docs/INSTALL.md](docs/INSTALL.md) — per-client setup (Claude Code, Cursor, Zed, generic, HTTP remote)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — components, data flow, principles
-- [docs/WRITE-WORKFLOW.md](docs/WRITE-WORKFLOW.md) — `to_obsidian` explained
-- [docs/SECURITY.md](docs/SECURITY.md) — read-only guarantees, path-traversal
+- [docs/WRITE-WORKFLOW.md](docs/WRITE-WORKFLOW.md) — `obsidian_write` ops, conventions, supersedes
+- [docs/SECURITY.md](docs/SECURITY.md) — path-traversal guard, atomic writes, HTTP auth, memory-poisoning notes
 - [docs/CUSTOMIZE.md](docs/CUSTOMIZE.md) — alternative embedders, env vars
 - [docs/TROUBLESHOOT.md](docs/TROUBLESHOOT.md) — common errors and fixes
-- [ROADMAP.md](ROADMAP.md) — v1.1+ planned features
+- [ROADMAP.md](ROADMAP.md) — v1.2+ planned features
 
 ## License
 

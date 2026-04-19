@@ -1,0 +1,53 @@
+name: second-brain-mcp
+
+services:
+  second-brain-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: second-brain-mcp:1.2.0
+    container_name: second-brain-mcp
+    restart: unless-stopped
+
+    # Host-side bind: loopback by default so `docker compose up` on a laptop
+    # does NOT quietly open port 8765 to the LAN. Flip to 0.0.0.0 (via
+    # MCP_BIND_HOST) only when you've set OBSIDIAN_HTTP_TOKEN in .env.docker.
+    ports:
+      - "${MCP_BIND_HOST:-127.0.0.1}:${MCP_HOST_PORT:-8765}:8765"
+
+    # Optional user-provided env. .env.docker holds the embedder API creds and
+    # (for non-loopback binds) OBSIDIAN_HTTP_TOKEN.
+    env_file:
+      - path: ./.env.docker
+        required: false
+
+    environment:
+      OBSIDIAN_MCP_TRANSPORT: http
+      OBSIDIAN_MCP_HOST: 0.0.0.0
+      OBSIDIAN_MCP_PORT: "8765"
+      OBSIDIAN_MCP_PATH: /mcp
+      OBSIDIAN_VAULT: /vault
+      OBSIDIAN_INDEX_DIR: /index
+      # Inside a container the process MUST listen on 0.0.0.0 to be reachable
+      # across the network namespace. The real exposure boundary is the
+      # host-side `ports:` directive above (loopback by default). This env
+      # tells the server's safety rail that the non-loopback bind is safe
+      # because the operator controls the outer boundary. Unset this if you
+      # run the container with host networking AND no token.
+      OBSIDIAN_ALLOW_UNAUTH_HOST: "1"
+
+    volumes:
+      # Vault is read-write: obsidian_write mutates notes. Default is the
+      # bundled template-vault so a bare `docker compose up` just works;
+      # override OBSIDIAN_VAULT_HOST in .env.docker to mount your own.
+      - type: bind
+        source: ${OBSIDIAN_VAULT_HOST:-./template-vault}
+        target: /vault
+      # ChromaDB collection + backlinks sidecar. Named volume → survives
+      # container recreation.
+      - second-brain-index:/index
+
+    stop_grace_period: 10s
+
+volumes:
+  second-brain-index:

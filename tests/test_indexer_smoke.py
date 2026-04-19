@@ -52,5 +52,7 @@ def test_index_md_excluded_from_vector(tmp_vault):
 def test_stats_reports_provider(tmp_vault):
     indexer.rebuild()
     s = indexer.stats()
-    assert s["embed_provider"] == "local"
-    assert s["embed_model"] == "sentence-transformers/all-MiniLM-L6-v2"
+    assert s["embed_provider"] == "openai"
+    assert s["embed_model"] == "fake-test-model"
+    # embed_device was removed when the on-device embedder was dropped.
+    assert "embed_device" not in s

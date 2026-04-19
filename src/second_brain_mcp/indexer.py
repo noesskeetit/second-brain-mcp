@@ -52,23 +52,24 @@ _EMBED_FN = None
 
 
 def embed_fn():
+    """Return the (cached) embedding function.
+
+    API-only: wires chromadb's OpenAIEmbeddingFunction to the configured
+    OpenAI-compatible HTTP endpoint. There is no on-device inference path —
+    keeps the server slim (no torch, no sentence-transformers, no model
+    cache volume).
+    """
     global _EMBED_FN
     if _EMBED_FN is None:
         cfg = _get_cfg()
-        if cfg.embed_provider == "openai":
-            kwargs = {
-                "api_key": cfg.embed_api_key,
-                "api_base": cfg.embed_api_url,
-                "model_name": cfg.embed_model,
-            }
-            if cfg.embed_dimensions:
-                kwargs["dimensions"] = cfg.embed_dimensions
-            _EMBED_FN = embedding_functions.OpenAIEmbeddingFunction(**kwargs)
-        else:
-            _EMBED_FN = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name=cfg.embed_model,
-                device=cfg.embed_device,
-            )
+        kwargs = {
+            "api_key": cfg.embed_api_key,
+            "api_base": cfg.embed_api_url,
+            "model_name": cfg.embed_model,
+        }
+        if cfg.embed_dimensions:
+            kwargs["dimensions"] = cfg.embed_dimensions
+        _EMBED_FN = embedding_functions.OpenAIEmbeddingFunction(**kwargs)
     return _EMBED_FN
 
 
@@ -421,5 +422,4 @@ def stats() -> dict:
         "index_dir": str(cfg.index_dir),
         "embed_provider": cfg.embed_provider,
         "embed_model": cfg.embed_model,
-        "embed_device": cfg.embed_device,
     }

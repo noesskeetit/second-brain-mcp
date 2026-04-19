@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "second-brain-mcp"
-version = "1.0.1"
-description = "MCP server that turns an Obsidian vault into semantic memory for any coding agent"
+version = "1.2.0"
+description = "MCP server that turns an Obsidian vault into semantic memory for any coding agent (stdio + streamable-http, API-only embedder)"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Alex Gabbasov", email = "shura.gabbasov@mail.ru" }]
@@ -19,12 +19,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mcp>=1.0",
+    "mcp>=1.9",
     "chromadb>=0.5",
-    "sentence-transformers>=3.0",
-    "torch>=2.2",
     "pyyaml>=6.0",
     "openai>=1.0",
+    "starlette>=0.37",
+    "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]

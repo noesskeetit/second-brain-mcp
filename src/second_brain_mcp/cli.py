@@ -2,7 +2,7 @@
 """`second-brain-mcp` command line interface.
 
 Subcommands:
-    serve      — run the stdio MCP server (used in `claude mcp add`)
+    serve      — run the MCP server (stdio by default, or streamable-http)
     index      — incremental reindex (mtime-based)
     rebuild    — full wipe + reindex
     search     — sanity-check search (bypasses MCP)
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 
@@ -20,7 +21,30 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="second-brain-mcp")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("serve", help="Run the stdio MCP server")
+    p_serve = sub.add_parser("serve", help="Run the MCP server (stdio or http)")
+    p_serve.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default=os.environ.get("OBSIDIAN_MCP_TRANSPORT", "stdio"),
+        help="Transport mode (default: stdio; env: OBSIDIAN_MCP_TRANSPORT).",
+    )
+    p_serve.add_argument(
+        "--host",
+        default=None,
+        help="HTTP bind host (default 127.0.0.1; env: OBSIDIAN_MCP_HOST).",
+    )
+    p_serve.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="HTTP bind port (default 8765; env: OBSIDIAN_MCP_PORT).",
+    )
+    p_serve.add_argument(
+        "--path",
+        default=None,
+        help="HTTP mount path (default /mcp; env: OBSIDIAN_MCP_PATH).",
+    )
+
     sub.add_parser("index", help="Incremental reindex")
     sub.add_parser("rebuild", help="Full wipe + reindex")
     sub.add_parser("stats", help="Print collection stats")
@@ -33,9 +57,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.cmd == "serve":
+        # CLI flags override env for this run.
+        if args.host is not None:
+            os.environ["OBSIDIAN_MCP_HOST"] = args.host
+        if args.port is not None:
+            os.environ["OBSIDIAN_MCP_PORT"] = str(args.port)
+        if args.path is not None:
+            os.environ["OBSIDIAN_MCP_PATH"] = args.path
+
         from .server import main as serve_main
 
-        serve_main()
+        serve_main(transport=args.transport)
         return 0
 
     from . import indexer

@@ -1,18 +1,20 @@
 # Roadmap
 
-v1.0 ships the read + write loop on top of a plain ChromaDB + bge-m3
-baseline. The items below are planned follow-ups. Each one is contained
-enough to be a good first-contribution PR.
+v1.0 shipped the read-side loop on top of a plain ChromaDB + bge-m3
+baseline. v1.1 added the write tool (`obsidian_write`) and a streamable
+HTTP transport. The items below are planned follow-ups. Each one is
+contained enough to be a good first-contribution PR.
 
 ---
 
 ## Done
 
 - **OpenAI-compatible API embedder** (2026-04-16) — `OBSIDIAN_EMBED_PROVIDER=openai` points the indexer at any OpenAI-compatible `/v1/embeddings` endpoint (Cloud.ru FM API, OpenAI, self-hosted Infinity). Local mode remains the default. See `docs/CUSTOMIZE.md` → API embedder.
+- **`obsidian_write` tool + streamable-HTTP transport** (v1.1.0) — one dispatcher write tool (create / append / prepend / replace_body / replace_text / set_frontmatter / delete / rename) with `dry_run`, atomic writes, path-traversal guard, and post-write reindex. HTTP transport adds `--transport http` with Bearer auth; non-loopback binds refuse to start without a token. The `to_obsidian` MCP prompt was removed — guidance now lives in the write-tool description.
 
 ---
 
-## v1.1 — Trust-aware ranking
+## v1.2 — Trust-aware ranking
 
 Multiply `similarity` by a booster read from `fm_confidence`:
 
@@ -32,7 +34,7 @@ the old note around unweighted.
 
 ---
 
-## v1.2 — Age-aware decay
+## v1.3 — Age-aware decay
 
 For notes with `type ∈ {knowledge, reference}` and a `verified` date
 older than 90 days, apply `exp(-age_days / 180)` to the similarity
@@ -46,7 +48,7 @@ the query. Roughly 10 lines in `indexer.search()`.
 
 ---
 
-## v1.3 — Inline `#tag` filter
+## v1.4 — Inline `#tag` filter
 
 Parse hashtags (`#example-tag`) from note bodies during indexing, store
 as a comma-separated string in chunk metadata (ChromaDB `where` filters
@@ -59,7 +61,7 @@ simply empty.
 
 ---
 
-## v1.4 — Hierarchical `_index.md` for large vaults
+## v1.5 — Hierarchical `_index.md` for large vaults
 
 When a vault grows past ~500 notes, `_index.md` bloats the response of
 `obsidian_overview` enough to eat meaningful token budget. Switch to
@@ -80,13 +82,10 @@ they happen at all, they belong in separate projects.
 - **Autonomous / background extraction, auto-reflection, compaction
   loops.** Memory poisoning risk, cascading-error risk, and
   over-accommodation are all real failure modes with no good automated
-  defence today. The LLM does the extraction work during an explicit
-  `/to_obsidian` invocation, but no process runs automatically in the
-  background or mid-session. Per-note human approval through
-  `to_obsidian` is the whole point.
-- **Write tools exposed via MCP.** See
-  [docs/SECURITY.md](docs/SECURITY.md). Any MCP write tool is a
-  memory-poisoning vector.
+  defence today. `obsidian_write` is a surgical tool, invoked by the
+  agent with intent — not a reflection loop running in the background.
+  That distinction is load-bearing; see
+  [docs/SECURITY.md](docs/SECURITY.md) on memory poisoning.
 - **Multi-user / shared memory.** Single-vault by design. Multi-user
   memory has its own set of problems (inconsistency across agents,
   trust propagation, access control) that this package intentionally

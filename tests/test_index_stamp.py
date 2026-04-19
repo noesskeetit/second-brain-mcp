@@ -1,7 +1,10 @@
 # tests/test_index_stamp.py
-"""Collection provider/model stamp blocks cross-provider searches."""
-from unittest.mock import MagicMock
+"""Collection provider/model stamp blocks cross-model searches.
 
+API-only world: provider is always "openai". The stamp's job is now to
+detect model changes (e.g. switching from Qwen3-Embedding-0.6B to
+text-embedding-3-small), which would make existing vectors nonsensical.
+"""
 import pytest
 
 from second_brain_mcp import indexer
@@ -11,31 +14,22 @@ def test_stamp_written_on_rebuild(tmp_vault, reset_indexer_caches):
     indexer.rebuild()
     col = indexer.get_collection()
     meta = col.metadata or {}
-    assert meta.get("embed_provider") == "local"
-    assert meta.get("embed_model") == "sentence-transformers/all-MiniLM-L6-v2"
+    assert meta.get("embed_provider") == "openai"
+    assert meta.get("embed_model") == "fake-test-model"
 
 
-def test_switching_provider_blocks_open(monkeypatch, tmp_vault, reset_indexer_caches):
-    indexer.rebuild()  # stamped as provider=local
+def test_switching_model_blocks_open(monkeypatch, tmp_vault, reset_indexer_caches):
+    indexer.rebuild()  # stamped with fake-test-model
 
-    stub = MagicMock(return_value=object())
-    monkeypatch.setattr(indexer.embedding_functions, "OpenAIEmbeddingFunction", stub)
-    monkeypatch.setenv("OBSIDIAN_EMBED_PROVIDER", "openai")
-    monkeypatch.setenv("OBSIDIAN_EMBED_API_KEY", "sk-test")
-    monkeypatch.setenv("OBSIDIAN_EMBED_API_URL", "https://example.com/v1")
-    monkeypatch.setenv("OBSIDIAN_EMBED_MODEL", "Qwen/Qwen3-Embedding-0.6B")
+    monkeypatch.setenv("OBSIDIAN_EMBED_MODEL", "text-embedding-3-small")
     reset_indexer_caches()
 
     with pytest.raises(RuntimeError, match="rebuild") as exc_info:
         indexer.get_collection()
 
-    # Message must surface both the stored and current provider/model so the
-    # user knows what changed without digging through env.
     msg = str(exc_info.value)
-    assert "local" in msg
-    assert "openai" in msg
-    assert "all-MiniLM-L6-v2" in msg
-    assert "Qwen" in msg
+    assert "fake-test-model" in msg  # stored model
+    assert "text-embedding-3-small" in msg  # requested model
 
 
 def test_dimensions_only_change_is_not_blocked(monkeypatch, tmp_vault, reset_indexer_caches):
@@ -49,16 +43,6 @@ def test_dimensions_only_change_is_not_blocked(monkeypatch, tmp_vault, reset_ind
     reset_indexer_caches()
 
     indexer.get_collection()  # must not raise
-
-
-def test_switching_model_within_local_blocks_open(monkeypatch, tmp_vault, reset_indexer_caches):
-    indexer.rebuild()  # stamped with all-MiniLM-L6-v2
-
-    monkeypatch.setenv("OBSIDIAN_EMBED_MODEL", "BAAI/bge-m3")
-    reset_indexer_caches()
-
-    with pytest.raises(RuntimeError, match="rebuild"):
-        indexer.get_collection()
 
 
 def test_legacy_collection_without_stamp_is_tolerated(tmp_vault, reset_indexer_caches):
