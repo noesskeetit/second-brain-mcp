@@ -1,29 +1,27 @@
 # tests/test_indexer_embed_fn.py
-"""Provider dispatch in indexer.embed_fn()."""
+"""embed_fn() wires the OpenAI-compatible API embedder.
+
+The server is API-only; there's no local/sentence-transformers branch
+left to exercise.
+"""
 from unittest.mock import MagicMock
 
 from second_brain_mcp import indexer
 
 
-def test_embed_fn_local_uses_sentence_transformer(monkeypatch, tmp_path, reset_indexer_caches):
+def _api_env(monkeypatch, tmp_path):
     monkeypatch.setenv("OBSIDIAN_VAULT", str(tmp_path))
-    monkeypatch.setenv("OBSIDIAN_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-    monkeypatch.setenv("OBSIDIAN_EMBED_DEVICE", "cpu")
-    reset_indexer_caches()
-    fn = indexer.embed_fn()
-    assert type(fn).__name__ == "SentenceTransformerEmbeddingFunction"
+    monkeypatch.setenv("OBSIDIAN_EMBED_API_KEY", "sk-test")
+    monkeypatch.setenv("OBSIDIAN_EMBED_API_URL", "https://example.com/v1")
+    monkeypatch.setenv("OBSIDIAN_EMBED_MODEL", "Qwen/Qwen3-Embedding-0.6B")
 
 
-def test_embed_fn_openai_uses_openai_fn(monkeypatch, tmp_path, reset_indexer_caches):
+def test_embed_fn_uses_openai(monkeypatch, tmp_path, reset_indexer_caches):
     sentinel = object()
     stub = MagicMock(return_value=sentinel)
     monkeypatch.setattr(indexer.embedding_functions, "OpenAIEmbeddingFunction", stub)
 
-    monkeypatch.setenv("OBSIDIAN_VAULT", str(tmp_path))
-    monkeypatch.setenv("OBSIDIAN_EMBED_PROVIDER", "openai")
-    monkeypatch.setenv("OBSIDIAN_EMBED_API_KEY", "sk-test")
-    monkeypatch.setenv("OBSIDIAN_EMBED_API_URL", "https://example.com/v1")
-    monkeypatch.setenv("OBSIDIAN_EMBED_MODEL", "Qwen/Qwen3-Embedding-0.6B")
+    _api_env(monkeypatch, tmp_path)
     reset_indexer_caches()
 
     fn = indexer.embed_fn()
@@ -37,15 +35,11 @@ def test_embed_fn_openai_uses_openai_fn(monkeypatch, tmp_path, reset_indexer_cac
     assert "dimensions" not in kwargs
 
 
-def test_embed_fn_openai_passes_dimensions_when_set(monkeypatch, tmp_path, reset_indexer_caches):
+def test_embed_fn_passes_dimensions_when_set(monkeypatch, tmp_path, reset_indexer_caches):
     stub = MagicMock(return_value=object())
     monkeypatch.setattr(indexer.embedding_functions, "OpenAIEmbeddingFunction", stub)
 
-    monkeypatch.setenv("OBSIDIAN_VAULT", str(tmp_path))
-    monkeypatch.setenv("OBSIDIAN_EMBED_PROVIDER", "openai")
-    monkeypatch.setenv("OBSIDIAN_EMBED_API_KEY", "sk-test")
-    monkeypatch.setenv("OBSIDIAN_EMBED_API_URL", "https://example.com/v1")
-    monkeypatch.setenv("OBSIDIAN_EMBED_MODEL", "Qwen/Qwen3-Embedding-0.6B")
+    _api_env(monkeypatch, tmp_path)
     monkeypatch.setenv("OBSIDIAN_EMBED_DIMENSIONS", "512")
     reset_indexer_caches()
 
@@ -53,3 +47,16 @@ def test_embed_fn_openai_passes_dimensions_when_set(monkeypatch, tmp_path, reset
 
     kwargs = stub.call_args.kwargs
     assert kwargs["dimensions"] == 512
+
+
+def test_embed_fn_cached_across_calls(monkeypatch, tmp_path, reset_indexer_caches):
+    stub = MagicMock(return_value=object())
+    monkeypatch.setattr(indexer.embedding_functions, "OpenAIEmbeddingFunction", stub)
+
+    _api_env(monkeypatch, tmp_path)
+    reset_indexer_caches()
+
+    a = indexer.embed_fn()
+    b = indexer.embed_fn()
+    assert a is b
+    assert stub.call_count == 1

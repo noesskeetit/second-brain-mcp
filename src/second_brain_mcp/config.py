@@ -7,22 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_INDEX_DIR = Path.home() / ".second-brain-mcp"
-DEFAULT_EMBED_MODEL = "BAAI/bge-m3"
-DEFAULT_PROVIDER = "local"
-ALLOWED_PROVIDERS = {"local", "openai"}
-
-
-def _auto_device() -> str:
-    # Lazy-import torch so a missing torch during config inspection doesn't crash.
-    try:
-        import torch
-    except ImportError:
-        return "cpu"
-    if torch.backends.mps.is_available():
-        return "mps"
-    if torch.cuda.is_available():
-        return "cuda"
-    return "cpu"
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 @dataclass(frozen=True)
@@ -30,11 +15,22 @@ class Config:
     vault: Path
     index_dir: Path
     embed_model: str
-    embed_device: str
-    embed_provider: str
-    embed_api_key: str | None
-    embed_api_url: str | None
+    embed_api_key: str
+    embed_api_url: str
     embed_dimensions: int | None
+    http_host: str
+    http_port: int
+    http_path: str
+    http_token: str | None
+    allow_unauth_host: bool
+
+    @property
+    def embed_provider(self) -> str:
+        # Kept as a property (not a stored field) so the collection stamp logic
+        # and stats output continue to have a single source of truth for
+        # "what embedder built this index". The server is API-only; if a user
+        # ever re-adds a local provider, this becomes a real field again.
+        return "openai"
 
 
 def _parse_dimensions(raw: str | None) -> int | None:
@@ -64,41 +60,50 @@ def load() -> Config:
         )
     vault = Path(vault_raw).expanduser().resolve()
     index_dir = Path(os.environ.get("OBSIDIAN_INDEX_DIR", str(DEFAULT_INDEX_DIR))).expanduser()
-    embed_model = os.environ.get("OBSIDIAN_EMBED_MODEL", DEFAULT_EMBED_MODEL)
-
-    provider = os.environ.get("OBSIDIAN_EMBED_PROVIDER", DEFAULT_PROVIDER).strip().lower()
-    if provider not in ALLOWED_PROVIDERS:
-        raise RuntimeError(
-            f"OBSIDIAN_EMBED_PROVIDER={provider!r} is not supported. "
-            f"Allowed values: {sorted(ALLOWED_PROVIDERS)}. See docs/CUSTOMIZE.md."
-        )
 
     api_key = os.environ.get("OBSIDIAN_EMBED_API_KEY") or None
     api_url = os.environ.get("OBSIDIAN_EMBED_API_URL") or None
+    embed_model = os.environ.get("OBSIDIAN_EMBED_MODEL") or None
+
+    missing = []
+    if not api_key:
+        missing.append("OBSIDIAN_EMBED_API_KEY")
+    if not api_url:
+        missing.append("OBSIDIAN_EMBED_API_URL")
+    if not embed_model:
+        missing.append("OBSIDIAN_EMBED_MODEL")
+    if missing:
+        raise RuntimeError(
+            "Embedder is API-only (OpenAI-compatible HTTP endpoint). "
+            f"Missing: {', '.join(missing)}. See docs/CUSTOMIZE.md."
+        )
+
     dimensions = _parse_dimensions(os.environ.get("OBSIDIAN_EMBED_DIMENSIONS"))
 
-    if provider == "openai":
-        missing = []
-        if not api_key:
-            missing.append("OBSIDIAN_EMBED_API_KEY")
-        if not api_url:
-            missing.append("OBSIDIAN_EMBED_API_URL")
-        if missing:
-            raise RuntimeError(
-                f"OBSIDIAN_EMBED_PROVIDER=openai requires: {', '.join(missing)}. "
-                "See docs/CUSTOMIZE.md → API embedder."
-            )
-        embed_device = ""  # unused in API mode
-    else:
-        embed_device = os.environ.get("OBSIDIAN_EMBED_DEVICE") or _auto_device()
+    http_host = os.environ.get("OBSIDIAN_MCP_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    http_port_raw = os.environ.get("OBSIDIAN_MCP_PORT", "8765").strip() or "8765"
+    try:
+        http_port = int(http_port_raw)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"OBSIDIAN_MCP_PORT must be an integer, got {http_port_raw!r}."
+        ) from exc
+    http_path = os.environ.get("OBSIDIAN_MCP_PATH", "/mcp").strip() or "/mcp"
+    if not http_path.startswith("/"):
+        http_path = "/" + http_path
+    http_token = os.environ.get("OBSIDIAN_HTTP_TOKEN") or None
+    allow_unauth_host = os.environ.get("OBSIDIAN_ALLOW_UNAUTH_HOST", "").strip() == "1"
 
     return Config(
         vault=vault,
         index_dir=index_dir,
         embed_model=embed_model,
-        embed_device=embed_device,
-        embed_provider=provider,
         embed_api_key=api_key,
         embed_api_url=api_url,
         embed_dimensions=dimensions,
+        http_host=http_host,
+        http_port=http_port,
+        http_path=http_path,
+        http_token=http_token,
+        allow_unauth_host=allow_unauth_host,
     )

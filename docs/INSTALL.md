@@ -1,8 +1,10 @@
 # Install
 
-Per-client setup for `second-brain-mcp`. The server is stdio-based and
-installs the same way for every MCP client — what differs is how each
-client registers it.
+Per-client setup for `second-brain-mcp`. The server speaks two
+transports — **stdio** (default, used by `claude mcp add` and
+subprocess-style MCP clients) and **streamable HTTP** (for hosting
+the server on a remote machine). Client registration is the same
+shape either way; only the `command` / `url` changes.
 
 ---
 
@@ -48,9 +50,10 @@ hand off to you with a message along these lines:
 >    `claude` process).
 > 2. In the new session ask the agent: *"List the tools from
 >    second-brain, then call obsidian_overview."* Expected: the agent
->    lists the four tools (`obsidian_overview`, `obsidian_search`,
->    `obsidian_read`, `obsidian_backlinks`) and `obsidian_overview`
->    returns vault stats plus the contents of `_index.md`.
+>    lists the five tools (`obsidian_overview`, `obsidian_search`,
+>    `obsidian_read`, `obsidian_backlinks`, `obsidian_write`) and
+>    `obsidian_overview` returns vault stats plus the contents of
+>    `_index.md`.
 > 3. Next ask: *"Search my vault for [a topic you know you've written
 >    about]."* Expected: the agent calls `obsidian_search`, returns
 >    relevant hits, then opens one with `obsidian_read`.
@@ -114,6 +117,73 @@ env:
 
 ---
 
+## Remote / HTTP mode
+
+When you want the server on a different machine from the agent — a VM,
+a shared workstation, a homelab box — use the streamable-HTTP
+transport instead of stdio.
+
+### On the server host
+
+```bash
+export OBSIDIAN_VAULT=$HOME/obsidian/vault
+export OBSIDIAN_HTTP_TOKEN=$(openssl rand -hex 32)   # required for non-loopback binds
+
+# Foreground:
+uvx second-brain-mcp serve \
+  --transport http \
+  --host 0.0.0.0 \
+  --port 8765
+
+# Or systemd-managed: put the same command in a user unit and
+# `systemctl --user enable --now second-brain-mcp`.
+```
+
+Safety rail: the server refuses to start on a non-loopback host
+without `OBSIDIAN_HTTP_TOKEN` set. You'll see a loud error and a
+non-zero exit rather than a quietly open port.
+
+### On the client
+
+Claude Code:
+
+```bash
+claude mcp add --transport http second-brain \
+  https://vm.example.com:8765/mcp \
+  --header "Authorization: Bearer $OBSIDIAN_HTTP_TOKEN"
+```
+
+Cursor / Zed: add an HTTP MCP entry with the same URL and
+`Authorization` header — consult your client's MCP docs for the exact
+config shape.
+
+### Single-user tunnel (no public port)
+
+If the server is behind a firewall and you just want your own laptop
+to reach it, skip the public bind and use SSH port forwarding:
+
+```bash
+# On the laptop
+ssh -L 8765:127.0.0.1:8765 user@vm
+
+# On the VM (started from the SSH session or beforehand)
+uvx second-brain-mcp serve --transport http --host 127.0.0.1 --port 8765
+
+# On the laptop (in a separate shell)
+claude mcp add --transport http second-brain http://127.0.0.1:8765/mcp
+```
+
+Loopback-only binds don't require `OBSIDIAN_HTTP_TOKEN`; the SSH
+tunnel is the auth. Terminate TLS in front with nginx / caddy if you
+expose the port publicly — uvicorn can serve TLS directly but the
+integration is outside what this package wires for you.
+
+Env vars that configure the HTTP transport:
+`OBSIDIAN_MCP_TRANSPORT` (`stdio` | `http`), `OBSIDIAN_MCP_HOST`,
+`OBSIDIAN_MCP_PORT`, `OBSIDIAN_MCP_PATH`, `OBSIDIAN_HTTP_TOKEN`.
+
+---
+
 ## Verify end-to-end
 
 Confirm the chain works at each layer:
@@ -144,18 +214,16 @@ Confirm the chain works at each layer:
    In a new session:
 
    1. Ask the agent to *"list the tools from second-brain, then call
-      `obsidian_overview`"*. Expected: four tools listed, overview returns
-      vault stats plus the contents of `_index.md` (or a placeholder if
-      you don't have one yet).
+      `obsidian_overview`"*. Expected: five tools listed
+      (`obsidian_overview`, `obsidian_search`, `obsidian_read`,
+      `obsidian_backlinks`, `obsidian_write`), overview returns vault
+      stats plus the contents of `_index.md` (or a placeholder if you
+      don't have one yet).
    2. Ask the agent to *"search my vault for [a topic you know is in
       there]"*. Expected: `obsidian_search` is called, returns relevant
       hits, and the agent reads one through `obsidian_read`.
    3. If no tools appear, run `claude mcp list`. If `second-brain` is
       missing or failed, see [TROUBLESHOOT.md](./TROUBLESHOOT.md).
-
-4. **`to_obsidian` prompt visible.** In Claude Code the prompt appears as
-   `/mcp__second-brain__to_obsidian` (or equivalent in your client's
-   prompt menu).
 
 ---
 
